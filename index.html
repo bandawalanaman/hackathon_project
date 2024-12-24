@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fitness Token Tracker</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/web3/4.4.0/web3.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Arial', sans-serif;
+        }
+
+        body {
+            background: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+
+        .section h2 {
+            color: #444;
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #666;
+        }
+
+        input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .stat-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        .stat-card h3 {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+
+        .stat-card p {
+            color: #333;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        #connectWallet {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+        }
+
+        .error {
+            color: #dc3545;
+            margin-top: 10px;
+            padding: 10px;
+            background: #ffe6e6;
+            border-radius: 4px;
+            display: none;
+        }
+
+        .success {
+            color: #28a745;
+            margin-top: 10px;
+            padding: 10px;
+            background: #e6ffe6;
+            border-radius: 4px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <button id="connectWallet">Connect Wallet</button>
+    
+    <div class="container">
+        <h1>Fitness Token Tracker</h1>
+
+        <div class="section">
+            <h2>Set New Goal</h2>
+            <div class="form-group">
+                <label for="targetSteps">Target Steps</label>
+                <input type="number" id="targetSteps" placeholder="Enter target steps">
+            </div>
+            <div class="form-group">
+                <label for="targetWorkouts">Target Workouts</label>
+                <input type="number" id="targetWorkouts" placeholder="Enter target workouts">
+            </div>
+            <div class="form-group">
+                <label for="duration">Duration (days)</label>
+                <input type="number" id="duration" placeholder="Enter duration in days">
+            </div>
+            <button onclick="setGoal()">Set Goal</button>
+            <div id="setGoalError" class="error"></div>
+            <div id="setGoalSuccess" class="success"></div>
+        </div>
+
+        <div class="section">
+            <h2>Current Progress</h2>
+            <div class="stats">
+                <div class="stat-card">
+                    <h3>Current Steps</h3>
+                    <p id="currentSteps">0</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Current Workouts</h3>
+                    <p id="currentWorkouts">0</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Target Steps</h3>
+                    <p id="targetStepsDisplay">-</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Target Workouts</h3>
+                    <p id="targetWorkoutsDisplay">-</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Time Remaining</h3>
+                    <p id="timeRemaining">-</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Potential Reward</h3>
+                    <p id="rewardAmount">0 FIT</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Update Progress</h2>
+            <div class="form-group">
+                <label for="newSteps">Update Steps</label>
+                <input type="number" id="newSteps" placeholder="Enter new total steps">
+            </div>
+            <button onclick="updateSteps()">Update Steps</button>
+            <button onclick="logWorkout()">Log Workout</button>
+            <div id="updateError" class="error"></div>
+            <div id="updateSuccess" class="success"></div>
+        </div>
+    </div>
+
+    <script>
+        let web3;
+        let contract;
+        let userAccount;
+        const contractAddress = '0xDA70C423F2CabAc5D8618d8896Ca961502dd71c1';
+        const contractABI = [
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "initialOwner",
+				"type": "address"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "constructor"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "spender",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "allowance",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "needed",
+				"type": "uint256"
+			}
+		],
+		"name": "ERC20InsufficientAllowance",
+		"type": "error"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "sender",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "balance",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "needed",
+				"type": "uint256"
+			}
+		],
+		"name": "ERC20InsufficientBalance",
+		"type": "error"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "approver",
+				"type": "address"
+			}
+		],
+		"name": "ERC20InvalidApprover",
+		"type": "error"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "receiver",
+				"type": "address"
+			}
+		],
+		"name": "ERC20InvalidReceiver",
+		"type": "error"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "sender",
+				"type": "address"
+			}
+		],
+		"name": "ERC20InvalidSender",
+		"type": "error"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "spender",
+				"type": "address"
+			}
+		],
+		"name": "ERC20InvalidSpender",
+		"type": "error"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "owner",
+				"type": "address"
+			}
+		],
+		"name": "OwnableInvalidOwner",
+		"type": "error"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "account",
+				"type": "address"
+			}
+		],
+		"name": "OwnableUnauthorizedAccount",
+		"type": "error"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "owner",
+				"type": "address"
+			},
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "spender",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "value",
+				"type": "uint256"
+			}
+		],
+		"name": "Approval",
+		"type": "event"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "spender",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "value",
+				"type": "uint256"
+			}
+		],
+		"name": "approve",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "reward",
+				"type": "uint256"
+			}
+		],
+		"name": "GoalCompleted",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "targetSteps",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "targetWorkouts",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "deadline",
+				"type": "uint256"
+			}
+		],
+		"name": "GoalSet",
+		"type": "event"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			}
+		],
+		"name": "logWorkout",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "previousOwner",
+				"type": "address"
+			},
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "newOwner",
+				"type": "address"
+			}
+		],
+		"name": "OwnershipTransferred",
+		"type": "event"
+	},
+	{
+		"inputs": [],
+		"name": "renounceOwnership",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "_targetSteps",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "_targetWorkouts",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "_durationInDays",
+				"type": "uint256"
+			}
+		],
+		"name": "setGoal",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "steps",
+				"type": "uint256"
+			}
+		],
+		"name": "StepsUpdated",
+		"type": "event"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "to",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "value",
+				"type": "uint256"
+			}
+		],
+		"name": "transfer",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "from",
+				"type": "address"
+			},
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "to",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "value",
+				"type": "uint256"
+			}
+		],
+		"name": "Transfer",
+		"type": "event"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "from",
+				"type": "address"
+			},
+			{
+				"internalType": "address",
+				"name": "to",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "value",
+				"type": "uint256"
+			}
+		],
+		"name": "transferFrom",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "newOwner",
+				"type": "address"
+			}
+		],
+		"name": "transferOwnership",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "newSteps",
+				"type": "uint256"
+			}
+		],
+		"name": "updateSteps",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			}
+		],
+		"name": "WorkoutCompleted",
+		"type": "event"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "owner",
+				"type": "address"
+			},
+			{
+				"internalType": "address",
+				"name": "spender",
+				"type": "address"
+			}
+		],
+		"name": "allowance",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "account",
+				"type": "address"
+			}
+		],
+		"name": "balanceOf",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "decimals",
+		"outputs": [
+			{
+				"internalType": "uint8",
+				"name": "",
+				"type": "uint8"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			}
+		],
+		"name": "getUserProgress",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "steps",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "workouts",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "targetSteps",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "targetWorkouts",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "deadline",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bool",
+				"name": "completed",
+				"type": "bool"
+			},
+			{
+				"internalType": "uint256",
+				"name": "rewardAmount",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "name",
+		"outputs": [
+			{
+				"internalType": "string",
+				"name": "",
+				"type": "string"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "owner",
+		"outputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "STEPS_REWARD_RATE",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "symbol",
+		"outputs": [
+			{
+				"internalType": "string",
+				"name": "",
+				"type": "string"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "totalSupply",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"name": "userGoals",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "targetSteps",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "targetWorkouts",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "deadline",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bool",
+				"name": "completed",
+				"type": "bool"
+			},
+			{
+				"internalType": "uint256",
+				"name": "rewardAmount",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"name": "userSteps",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"name": "userWorkouts",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "WORKOUT_REWARD_RATE",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	}
+];
+
+        async function connectWallet() {
+            if (typeof window.ethereum !== 'undefined') {
+                try {
+                    await window.ethereum.request({ method: 'eth_requestAccounts' });
+                    web3 = new Web3(window.ethereum);
+                    const accounts = await web3.eth.getAccounts();
+                    userAccount = accounts[0];
+                    document.getElementById('connectWallet').textContent = userAccount.substring(0, 6) + '...' + userAccount.substring(38);
+                    contract = new web3.eth.Contract(contractABI, contractAddress);
+                    updateUI();
+                } catch (error) {
+                    console.error('Error connecting wallet:', error);
+                }
+            } else {
+                alert('Please install MetaMask to use this dApp!');
+            }
+        }
+
+        async function setGoal() {
+            try {
+                const targetSteps = document.getElementById('targetSteps').value;
+                const targetWorkouts = document.getElementById('targetWorkouts').value;
+                const duration = document.getElementById('duration').value;
+
+                await contract.methods.setGoal(targetSteps, targetWorkouts, duration).send({ from: userAccount });
+                
+                document.getElementById('setGoalSuccess').style.display = 'block';
+                document.getElementById('setGoalSuccess').textContent = 'Goal set successfully!';
+                document.getElementById('setGoalError').style.display = 'none';
+                updateUI();
+            } catch (error) {
+                document.getElementById('setGoalError').style.display = 'block';
+                document.getElementById('setGoalError').textContent = 'Error setting goal: ' + error.message;
+                document.getElementById('setGoalSuccess').style.display = 'none';
+            }
+        }
+
+        async function updateSteps() {
+            try {
+                const newSteps = document.getElementById('newSteps').value;
+                await contract.methods.updateSteps(userAccount, newSteps).send({ from: userAccount });
+                
+                document.getElementById('updateSuccess').style.display = 'block';
+                document.getElementById('updateSuccess').textContent = 'Steps updated successfully!';
+                document.getElementById('updateError').style.display = 'none';
+                updateUI();
+            } catch (error) {
+                document.getElementById('updateError').style.display = 'block';
+                document.getElementById('updateError').textContent = 'Error updating steps: ' + error.message;
+                document.getElementById('updateSuccess').style.display = 'none';
+            }
+        }
+
+        async function logWorkout() {
+            try {
+                await contract.methods.logWorkout(userAccount).send({ from: userAccount });
+                
+                document.getElementById('updateSuccess').style.display = 'block';
+                document.getElementById('updateSuccess').textContent = 'Workout logged successfully!';
+                document.getElementById('updateError').style.display = 'none';
+                updateUI();
+            } catch (error) {
+                document.getElementById('updateError').style.display = 'block';
+                document.getElementById('updateError').textContent = 'Error logging workout: ' + error.message;
+                document.getElementById('updateSuccess').style.display = 'none';
+            }
+        }
+
+        async function updateUI() {
+            if (!contract || !userAccount) return;
+
+            try {
+                const progress = await contract.methods.getUserProgress(userAccount).call();
+                
+                document.getElementById('currentSteps').textContent = progress.steps;
+                document.getElementById('currentWorkouts').textContent = progress.workouts;
+                document.getElementById('targetStepsDisplay').textContent = progress.targetSteps;
+                document.getElementById('targetWorkoutsDisplay').textContent = progress.targetWorkouts;
+                
+                if (progress.deadline > 0) {
+                    const timeRemaining = Math.max(0, progress.deadline - Math.floor(Date.now() / 1000));
+                    const days = Math.floor(timeRemaining / (24 * 60 * 60));
+                    document.getElementById('timeRemaining').textContent = `${days} days`;
+                }
+                
+                document.getElementById('rewardAmount').textContent = `${web3.utils.fromWei(progress.rewardAmount, 'ether')} FIT`;
+            } catch (error) {
+                console.error('Error updating UI:', error);
+            }
+        }
+
+        document.getElementById('connectWallet').addEventListener('click', connectWallet);
+
+        // Update UI every 60 seconds
+        setInterval(updateUI, 60000);
+    </script>
+</body>
+</html>
